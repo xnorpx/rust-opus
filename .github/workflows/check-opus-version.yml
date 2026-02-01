@@ -1,4 +1,6 @@
 name: Check Opus Version
+permissions:
+  contents: read
 
 on:
   schedule:
