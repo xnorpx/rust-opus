@@ -1,0 +1,15 @@
+# Opus Vendor Information
+#
+# This file tracks the exact version of the vendored Opus source.
+
+source: https://github.com/xiph/opus
+commit: a3f0ec02b34281c38aefdaf4bbbd5787ad641d62
+date: 2026-01-21
+branch: main
+
+# To update, run this script again:
+# python vendor_opus.py
+#
+# Or manually:
+# git clone https://github.com/xiph/opus vendored/opus
+# cd vendored/opus && git checkout <NEW_COMMIT>
