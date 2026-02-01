@@ -50,6 +50,9 @@
 #include "lace_data.c"
 #include "nolace_data.c"
 #endif
+#ifdef ENABLE_OSCE_BWE
+#include "bbwenet_data.c"
+#endif
 
 void write_weights(const WeightArray *list, FILE *fout)
 {
@@ -78,7 +81,7 @@ void write_weights(const WeightArray *list, FILE *fout)
 
 int main(void)
 {
-  FILE *fout = fopen("weights_blob.bin", "w");
+  FILE *fout = fopen("weights_blob.bin", "wb");  /* Use binary mode for Windows compatibility */
   write_weights(pitchdnn_arrays, fout);
   write_weights(fargan_arrays, fout);
   write_weights(plcmodel_arrays, fout);
@@ -90,6 +93,11 @@ int main(void)
 #endif
 #ifndef DISABLE_NOLACE
   write_weights(nolacelayers_arrays, fout);
+#endif
+#endif
+#ifdef ENABLE_OSCE_BWE
+#ifndef DISABLE_BBWENET
+  write_weights(bbwenetlayers_arrays, fout);
 #endif
 #endif
   fclose(fout);

@@ -1,0 +1,52 @@
+﻿From: opus-head-sys maintainers
+Date: Fri, 31 Jan 2026 00:00:00 +0000
+Subject: [PATCH] Add OPUS_RUNTIME_WEIGHTS cmake option
+
+Add a new CMake option OPUS_RUNTIME_WEIGHTS that, when enabled,
+defines USE_WEIGHTS_FILE at compile time. This tells Opus to expect
+DNN weights to be loaded at runtime via OPUS_SET_DNN_BLOB() instead
+of using embedded weights.
+
+Note: The large weight data arrays in *_data.c files should be stripped
+using strip_weights.py before packaging. This patch only handles the
+compile-time flag.
+
+When OPUS_RUNTIME_WEIGHTS=ON, users MUST call opus_encoder_ctl() or
+opus_decoder_ctl() with OPUS_SET_DNN_BLOB(data, len) to provide the
+neural network weights before using DRED or OSCE features.
+---
+ CMakeLists.txt | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index fcf034b..eb3391b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -99,6 +99,14 @@ set(OPUS_OSCE_HELP_STR "enable OSCE.")
+ option(OPUS_OSCE ${OPUS_OSCE_HELP_STR} OFF)
+ add_feature_info(OPUS_OSCE OPUS_OSCE ${OPUS_OSCE_HELP_STR})
+ 
++set(OPUS_RUNTIME_WEIGHTS_HELP_STR "load DNN weights at runtime via OPUS_SET_DNN_BLOB() instead of embedding them.")
++cmake_dependent_option(OPUS_RUNTIME_WEIGHTS
++  ${OPUS_RUNTIME_WEIGHTS_HELP_STR}
++  OFF
++  "OPUS_DRED OR OPUS_OSCE"
++  OFF)
++add_feature_info(OPUS_RUNTIME_WEIGHTS OPUS_RUNTIME_WEIGHTS ${OPUS_RUNTIME_WEIGHTS_HELP_STR})
++
+ if(APPLE)
+   set(OPUS_BUILD_FRAMEWORK_HELP_STR "build Framework bundle for Apple systems.")
+   option(OPUS_BUILD_FRAMEWORK ${OPUS_BUILD_FRAMEWORK_HELP_STR} OFF)
+@@ -404,6 +412,10 @@ if(NOT OPUS_ENABLE_FLOAT_API)
+   target_compile_definitions(opus PRIVATE DISABLE_FLOAT_API)
+ endif()
+ 
++if(OPUS_RUNTIME_WEIGHTS)
++  target_compile_definitions(opus PRIVATE USE_WEIGHTS_FILE)
++endif()
++
+ if (OPUS_DEEP_PLC OR OPUS_DRED OR OPUS_OSCE)
+   add_sources_group(opus lpcnet ${deep_plc_headers} ${deep_plc_sources})
+   set(OPUS_DNN TRUE)
+-- 
+2.39.0

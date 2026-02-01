@@ -1,0 +1,39 @@
+From: opus-head-sys maintainers
+Date: Sat, 1 Feb 2026 00:00:00 +0000
+Subject: [PATCH] Add OSCE BWE weights to write_lpcnet_weights
+
+Include the bandwidth extension (BWE) weights in the generated weights blob
+when ENABLE_OSCE_BWE is defined. This ensures the decoder can load the full
+DNN weights including BWE support.
+---
+ dnn/write_lpcnet_weights.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/dnn/write_lpcnet_weights.c b/dnn/write_lpcnet_weights.c
+index abc123..def456 100644
+--- a/dnn/write_lpcnet_weights.c
++++ b/dnn/write_lpcnet_weights.c
+@@ -49,6 +49,9 @@
+ #include "lace_data.c"
+ #include "nolace_data.c"
+ #endif
++#ifdef ENABLE_OSCE_BWE
++#include "bbwenet_data.c"
++#endif
+ 
+ void write_weights(const WeightArray *list, FILE *fout)
+ {
+@@ -90,6 +93,11 @@ int main(void)
+   write_weights(nolacelayers_arrays, fout);
+ #endif
+ #endif
++#ifdef ENABLE_OSCE_BWE
++#ifndef DISABLE_BBWENET
++  write_weights(bbwenetlayers_arrays, fout);
++#endif
++#endif
+   fclose(fout);
+   return 0;
+ }
+-- 
+2.39.0

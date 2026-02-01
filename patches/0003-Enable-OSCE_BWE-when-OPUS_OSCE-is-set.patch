@@ -1,0 +1,28 @@
+From: opus-head-sys maintainers
+Date: Sat, 1 Feb 2026 00:00:00 +0000
+Subject: [PATCH] cmake: define ENABLE_OSCE_BWE when OPUS_OSCE is set
+
+This fixes compilation of the bandwidth extension module when compiling with
+cmake. Matches the behaviour of --enable-osce from configure.ac which also
+ties the 2 options together.
+
+Based on: https://github.com/xiph/opus/pull/457
+---
+ CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index eb3391b..a1b2c3d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -423,7 +423,7 @@ endif()
+ 
+ if (OPUS_OSCE)
+   add_sources_group(opus lpcnet ${osce_headers} ${osce_sources})
+-  target_compile_definitions(opus PRIVATE ENABLE_OSCE)
++  target_compile_definitions(opus PRIVATE ENABLE_OSCE ENABLE_OSCE_BWE)
+ endif()
+ 
+ if(NOT OPUS_DISABLE_INTRINSICS)
+-- 
+2.39.0

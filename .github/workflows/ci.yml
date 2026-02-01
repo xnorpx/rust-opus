@@ -117,6 +117,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Generate DNN weights
+        run: python generate_weights.py
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:

@@ -13,6 +13,10 @@ links = "opus"
 build = "build.rs"
 exclude = [
     "*.py",
+    "*.bin",
+    "*.bin.gz",
+    "*.zip",
+    "__pycache__/",
     ".github/",
     "vendored/opus/.git*",
     "vendored/opus/.gitlab-ci.yml",
@@ -23,6 +27,7 @@ exclude = [
     "vendored/opus/dnn/**/*.ipynb",
     "vendored/opus/dnn/**/*.tar",
     "vendored/opus/dnn/**/*.py",
+    "vendored/opus/dnn/torch/",
     "vendored/opus/scripts/",
     "vendored/opus/meson/",
 ]
@@ -33,10 +38,10 @@ exclude = [
 cmake = "0.1"
 
 [features]
-default = ["dred", "osce", "fast-math"]
-# Enable DRED (Deep REDundancy) for packet loss resilience
-dred = []
-# Enable OSCE (Opus Speech Coding Enhancement) for improved quality
-osce = []
+default = ["dnn", "fast-math"]
+# Enable DNN-based features: DRED (Deep REDundancy) and OSCE (Opus Speech Coding Enhancement)
+# DRED provides packet loss resilience, OSCE provides improved audio quality
+# Requires loading weights at runtime via OPUS_SET_DNN_BLOB()
+dnn = []
 # Enable fast math optimizations (enables OPUS_FLOAT_APPROX and OPUS_FAST_MATH)
 fast-math = []
