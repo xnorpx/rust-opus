@@ -1,0 +1,22 @@
+This crate (rust-opus) provides Rust FFI bindings to the upstream Opus audio codec library.
+
+Opus is a codec for interactive speech and audio transmission over the Internet,
+specified by IETF RFC 6716.
+
+Upstream source:
+  - Source: https://github.com/xiph/opus
+  - Website: https://opus-codec.org/
+
+The upstream Opus codec is licensed under the BSD 3-Clause License:
+
+  Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic,
+                      Jean-Marc Valin, Timothy B. Terriberry,
+                      CSIRO, Gregory Maxwell, Mark Borgerding,
+                      Erik de Castro Lopo, Mozilla, Amazon
+
+Opus is subject to royalty-free patent licenses specified at:
+  - Xiph.Org Foundation: https://datatracker.ietf.org/ipr/1524/
+  - Microsoft Corporation: https://datatracker.ietf.org/ipr/1914/
+  - Broadcom Corporation: https://datatracker.ietf.org/ipr/1526/
+
+The vendored upstream code retains its original copyright and license notices.

@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly to catch upstream changes
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - name: Linux x86_64 (stable)
+            os: ubuntu-latest
+            rust: stable
+            target: x86_64-unknown-linux-gnu
+            test: true
+          - name: Linux x86_64 (beta)
+            os: ubuntu-latest
+            rust: beta
+            target: x86_64-unknown-linux-gnu
+            test: true
+          - name: Linux x86_64 (nightly)
+            os: ubuntu-latest
+            rust: nightly
+            target: x86_64-unknown-linux-gnu
+            test: true
+          
+          # Linux ARM64
+          - name: Linux ARM64
+            os: ubuntu-24.04-arm
+            rust: stable
+            target: aarch64-unknown-linux-gnu
+            test: true
+          
+          # Windows
+          - name: Windows x86_64
+            os: windows-latest
+            rust: stable
+            target: x86_64-pc-windows-msvc
+            test: true
+          - name: Windows i686
+            os: windows-latest
+            rust: stable
+            target: i686-pc-windows-msvc
+            test: false
+          - name: Windows ARM64 (cross)
+            os: windows-latest
+            rust: stable
+            target: aarch64-pc-windows-msvc
+            test: false
+          - name: Windows ARM64 (native)
+            os: windows-11-arm
+            rust: stable
+            target: aarch64-pc-windows-msvc
+            test: true
+          
+          # macOS
+          - name: macOS x86_64
+            os: macos-latest
+            rust: stable
+            target: x86_64-apple-darwin
+            test: true
+          - name: macOS ARM64
+            os: macos-latest
+            rust: stable
+            target: aarch64-apple-darwin
+            test: true
+          
+          # iOS
+          - name: iOS ARM64
+            os: macos-latest
+            rust: stable
+            target: aarch64-apple-ios
+            test: false
+          
+          # Android
+          - name: Android ARM64
+            os: ubuntu-latest
+            rust: stable
+            target: aarch64-linux-android
+            android: true
+            test: false
+          - name: Android ARMv7
+            os: ubuntu-latest
+            rust: stable
+            target: armv7-linux-androideabi
+            android: true
+            test: false
+          - name: Android x86_64
+            os: ubuntu-latest
+            rust: stable
+            target: x86_64-linux-android
+            android: true
+            test: false
+          - name: Android i686
+            os: ubuntu-latest
+            rust: stable
+            target: i686-linux-android
+            android: true
+            test: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          targets: ${{ matrix.target }}
+
+      - name: Install cargo-ndk
+        if: matrix.android
+        run: cargo install cargo-ndk
+
+      - name: Build
+        if: ${{ !matrix.android }}
+        run: cargo build --target ${{ matrix.target }} --verbose
+
+      - name: Build (Android)
+        if: matrix.android
+        run: cargo ndk -t ${{ matrix.target }} build --verbose
+
+      - name: Run tests
+        if: matrix.test
+        run: cargo test --target ${{ matrix.target }} --verbose
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build docs
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+

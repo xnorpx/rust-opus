@@ -1,0 +1,29 @@
+[package]
+name = "opus-head-sys"
+version = "0.1.0"
+edition = "2021"
+authors = ["Marucs Asteborg <xnorpx@outlook.com>"]
+license = "MIT OR Apache-2.0"
+description = "FFI bindings to the Opus audio codec (vendored)"
+repository = "https://github.com/xnorpx/rust-opus"
+documentation = "https://docs.rs/opus-head-sys"
+keywords = ["opus", "audio", "codec", "ffi", "bindings"]
+categories = ["external-ffi-bindings", "multimedia::audio"]
+links = "opus"
+build = "build.rs"
+
+[dependencies]
+
+[build-dependencies]
+cmake = "0.1"
+
+[features]
+default = ["dred", "osce", "fast-math"]
+# Enable DRED (Deep REDundancy) for packet loss resilience
+dred = []
+# Enable OSCE (Opus Speech Coding Enhancement) for improved quality
+osce = []
+# Enable fast math optimizations (enables OPUS_FLOAT_APPROX and OPUS_FAST_MATH)
+fast-math = []
+# Enable to regenerate bindings (requires bindgen CLI or bindgen crate)
+regenerate-bindings = []
