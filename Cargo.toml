@@ -11,6 +11,15 @@ keywords = ["opus", "audio", "codec", "ffi", "bindings"]
 categories = ["external-ffi-bindings", "multimedia::audio"]
 links = "opus"
 build = "build.rs"
+exclude = [
+    "*.py",
+    ".github/",
+    "vendored/opus/.git*",
+    "vendored/opus/.gitlab-ci.yml",
+    "vendored/opus/doc/",
+    "vendored/opus/tests/",
+    "vendored/opus/training/",
+]
 
 [dependencies]
 
@@ -25,5 +34,3 @@ dred = []
 osce = []
 # Enable fast math optimizations (enables OPUS_FLOAT_APPROX and OPUS_FAST_MATH)
 fast-math = []
-# Enable to regenerate bindings (requires bindgen CLI or bindgen crate)
-regenerate-bindings = []
