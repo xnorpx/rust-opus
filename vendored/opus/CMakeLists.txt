@@ -99,6 +99,14 @@ set(OPUS_OSCE_HELP_STR "enable OSCE.")
 option(OPUS_OSCE ${OPUS_OSCE_HELP_STR} OFF)
 add_feature_info(OPUS_OSCE OPUS_OSCE ${OPUS_OSCE_HELP_STR})
 
+set(OPUS_RUNTIME_WEIGHTS_HELP_STR "load DNN weights at runtime via OPUS_SET_DNN_BLOB() instead of embedding them.")
+cmake_dependent_option(OPUS_RUNTIME_WEIGHTS
+  ${OPUS_RUNTIME_WEIGHTS_HELP_STR}
+  OFF
+  "OPUS_DRED OR OPUS_OSCE"
+  OFF)
+add_feature_info(OPUS_RUNTIME_WEIGHTS OPUS_RUNTIME_WEIGHTS ${OPUS_RUNTIME_WEIGHTS_HELP_STR})
+
 if(APPLE)
   set(OPUS_BUILD_FRAMEWORK_HELP_STR "build Framework bundle for Apple systems.")
   option(OPUS_BUILD_FRAMEWORK ${OPUS_BUILD_FRAMEWORK_HELP_STR} OFF)
@@ -404,6 +412,10 @@ if(NOT OPUS_ENABLE_FLOAT_API)
   target_compile_definitions(opus PRIVATE DISABLE_FLOAT_API)
 endif()
 
+if(OPUS_RUNTIME_WEIGHTS)
+  target_compile_definitions(opus PRIVATE USE_WEIGHTS_FILE)
+endif()
+
 if (OPUS_DEEP_PLC OR OPUS_DRED OR OPUS_OSCE)
   add_sources_group(opus lpcnet ${deep_plc_headers} ${deep_plc_sources})
   set(OPUS_DNN TRUE)
@@ -423,7 +435,7 @@ endif()
 
 if (OPUS_OSCE)
   add_sources_group(opus lpcnet ${osce_headers} ${osce_sources})
-  target_compile_definitions(opus PRIVATE ENABLE_OSCE)
+  target_compile_definitions(opus PRIVATE ENABLE_OSCE ENABLE_OSCE_BWE)
 endif()
 
 if(NOT OPUS_DISABLE_INTRINSICS)

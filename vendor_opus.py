@@ -90,7 +90,19 @@ def clone_repo(repo_url, target_dir, commit=None):
     git_dir = target_dir / ".git"
     if git_dir.exists():
         print(f"Removing {git_dir} to allow vendoring as regular files...")
-        shutil.rmtree(git_dir)
+        # On Windows, git may hold locks on files. Try multiple times with delays.
+        import time
+        for attempt in range(3):
+            try:
+                shutil.rmtree(git_dir)
+                break
+            except PermissionError as e:
+                if attempt < 2:
+                    print(f"  Retrying .git removal (attempt {attempt + 2}/3)...")
+                    time.sleep(1)
+                else:
+                    print(f"  Warning: Could not remove .git directory: {e}")
+                    print("  You may need to remove it manually.")
     
     return actual_commit
 
@@ -166,6 +178,120 @@ def download_opus_model(opus_dir, model_hash):
             run_command(["dnn/download_model.sh", model_hash], cwd=opus_dir)
         else:
             print(f"  Warning: {download_script} not found")
+
+
+def patch_cmake_for_runtime_weights(opus_dir):
+    """
+    Apply the OPUS_RUNTIME_WEIGHTS patch to Opus CMakeLists.txt.
+    
+    This patch adds a CMake option that:
+    1. Defines USE_WEIGHTS_FILE at compile time
+    2. Filters out the large *_data.c files from the build (~83MB)
+    
+    The patch file is located at patches/0001-Add-OPUS_RUNTIME_WEIGHTS-cmake-option.patch
+    and can be submitted upstream to the Opus project.
+    """
+    cmake_file = opus_dir / "CMakeLists.txt"
+    if not cmake_file.exists():
+        print("  Warning: CMakeLists.txt not found")
+        return False
+    
+    content = cmake_file.read_text()
+    
+    # Check if already patched
+    if "OPUS_RUNTIME_WEIGHTS" in content:
+        print("  CMakeLists.txt already patched")
+        return True
+    
+    # Find the patch file
+    project_dir = Path(__file__).parent.resolve()
+    patch_file = project_dir / "patches" / "0001-Add-OPUS_RUNTIME_WEIGHTS-cmake-option.patch"
+    
+    if not patch_file.exists():
+        print(f"  Error: Patch file not found at {patch_file}")
+        return False
+    
+    # Apply the patch using git apply
+    result = run_command(
+        ["git", "apply", str(patch_file)],
+        cwd=opus_dir,
+        check=False
+    )
+    if result.returncode == 0:
+        print("  Applied OPUS_RUNTIME_WEIGHTS patch")
+        return True
+    else:
+        print(f"  Error: git apply failed: {result.stderr}")
+        return False
+
+
+def create_weight_stub_files(opus_dir):
+    """
+    Replace large DNN weight data files with minimal stubs.
+    
+    The *_data.c files contain embedded neural network weights (~83MB total).
+    When USE_WEIGHTS_FILE is defined, these files compile to empty translation
+    units. We replace them with stubs so:
+    1. CMake can find them during build
+    2. The crate size stays small for crates.io publishing
+    3. Weights are loaded at runtime via OPUS_SET_DNN_BLOB()
+    """
+    dnn_dir = opus_dir / "dnn"
+    if not dnn_dir.exists():
+        print("  Warning: dnn directory not found")
+        return
+    
+    # List of data files to stub (these contain the large weight arrays)
+    data_files = [
+        "fargan_data.c",
+        "pitchdnn_data.c", 
+        "plc_data.c",
+        "dred_rdovae_enc_data.c",
+        "dred_rdovae_dec_data.c",
+        "dred_rdovae_stats_data.c",
+        "lace_data.c",
+        "nolace_data.c",
+        "bbwenet_data.c",
+        "lossgen_data.c",
+    ]
+    
+    total_saved = 0
+    stubbed_count = 0
+    
+    for filename in data_files:
+        file_path = dnn_dir / filename
+        if not file_path.exists():
+            continue
+        
+        original_size = file_path.stat().st_size
+        
+        # Get the corresponding header name
+        header_name = filename.replace(".c", ".h")
+        
+        # Create stub content - minimal valid C that compiles to nothing
+        stub_content = f'''/* Stub file - DNN weights loaded at runtime via OPUS_SET_DNN_BLOB() */
+/* Original file contained embedded neural network weights (~{original_size // 1024 // 1024}MB) */
+/* See generate_weights.py to create weight blob files */
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+#include "{header_name}"
+
+/* When USE_WEIGHTS_FILE is defined, this file is intentionally empty. */
+/* Weights must be provided at runtime using opus_encoder_ctl/opus_decoder_ctl */
+/* with OPUS_SET_DNN_BLOB(data, len) before enabling DRED or OSCE features. */
+'''
+        
+        file_path.write_text(stub_content)
+        new_size = file_path.stat().st_size
+        saved = original_size - new_size
+        total_saved += saved
+        stubbed_count += 1
+        print(f"  Stubbed {filename}: {original_size // 1024 // 1024}MB -> {new_size}B")
+    
+    print(f"  Total: {stubbed_count} files stubbed, {total_saved // 1024 // 1024}MB saved")
 
 
 def generate_bindings(opus_dir, output_dir):
@@ -258,7 +384,7 @@ def main():
         return
     
     # Step 1: Get latest commit info from GitHub
-    print("\n[1/5] Fetching latest commit info from GitHub...")
+    print("\n[1/7] Fetching latest commit info from GitHub...")
     try:
         commit_info = get_latest_commit_info("xiph", "opus")
         print(f"  Latest commit: {commit_info['sha'][:12]}")
@@ -286,7 +412,7 @@ def main():
             print(f"  Updating to: {commit_info['sha'][:12]}")
     
     # Step 2: Clone the Opus repository
-    print("\n[2/5] Cloning Opus repository...")
+    print("\n[2/7] Cloning Opus repository...")
     try:
         actual_commit = clone_repo(
             "https://github.com/xiph/opus.git",
@@ -300,11 +426,11 @@ def main():
         sys.exit(1)
     
     # Step 3: Generate OPUS_VERSION file
-    print("\n[3/5] Generating OPUS_VERSION file...")
+    print("\n[3/7] Generating OPUS_VERSION file...")
     generate_version_file(vendored_dir, commit_info["sha"], commit_info["date"])
     
     # Step 4: Parse autogen.sh and download model
-    print("\n[4/5] Downloading Opus DNN model...")
+    print("\n[4/7] Downloading Opus DNN model...")
     try:
         model_hash = parse_autogen_for_model_hash(opus_dir)
         if model_hash:
@@ -312,8 +438,34 @@ def main():
     except Exception as e:
         print(f"  Warning: model download failed (may be OK): {e}")
     
-    # Step 5: Generate bindings
-    print("\n[5/5] Generating Rust bindings...")
+    # Step 5: Patch CMake for OPUS_RUNTIME_WEIGHTS option
+    print("\n[5/7] Patching CMake for runtime weights support...")
+    patch_cmake_for_runtime_weights(opus_dir)
+    
+    # Step 6: Strip weight data from source files
+    print("\n[6/7] Stripping weight data from source files...")
+    strip_weights_script = script_dir / "strip_weights.py"
+    if strip_weights_script.exists():
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(strip_weights_script)],
+            cwd=script_dir,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            print("  Weight data stripped successfully")
+            # Print summary from output
+            for line in result.stdout.strip().split('\n'):
+                if 'Saved' in line or 'Total' in line:
+                    print(f"  {line}")
+        else:
+            print(f"  Warning: strip_weights.py failed: {result.stderr}")
+    else:
+        print(f"  Warning: strip_weights.py not found at {strip_weights_script}")
+    
+    # Step 7: Generate bindings
+    print("\n[7/7] Generating Rust bindings...")
     src_dir.mkdir(parents=True, exist_ok=True)
     generate_bindings(opus_dir, src_dir)
     

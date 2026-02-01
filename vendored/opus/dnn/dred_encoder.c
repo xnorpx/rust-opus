@@ -30,9 +30,9 @@
 #endif
 
 #include <string.h>
+#include <stdio.h>
 
 #if 0
-#include <stdio.h>
 #include <math.h>
 #endif
 

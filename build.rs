@@ -50,8 +50,16 @@ fn build_opus() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut config = Config::new(&opus_dir);
 
+    // Use RelWithDebInfo for debug builds (gives debug symbols but links release CRT)
+    // On Windows, pure Debug builds use MSVCRTD which conflicts with Rust's CRT
+    let profile = if env::var("PROFILE").unwrap_or_default() == "release" {
+        "Release"
+    } else {
+        "RelWithDebInfo"
+    };
+
     config
-        .profile("Release")
+        .profile(profile)
         .define("OPUS_BUILD_SHARED_LIBRARY", "OFF")
         .define("OPUS_BUILD_TESTING", "OFF")
         .define("OPUS_BUILD_PROGRAMS", "OFF")
@@ -218,8 +226,7 @@ fn configure_x86_features(config: &mut Config) {
 
 fn configure_features(config: &mut Config, target_os: &str, target_arch: &str) {
     // Check Cargo feature flags
-    let dred_enabled = env::var("CARGO_FEATURE_DRED").is_ok();
-    let osce_enabled = env::var("CARGO_FEATURE_OSCE").is_ok();
+    let dnn_enabled = env::var("CARGO_FEATURE_DNN").is_ok();
     let fast_math_enabled = env::var("CARGO_FEATURE_FAST_MATH").is_ok();
 
     // DRED/OSCE don't work on some platforms
@@ -231,20 +238,17 @@ fn configure_features(config: &mut Config, target_os: &str, target_arch: &str) {
             target_os, target_arch
         );
         config.define("OPUS_DRED", "OFF").define("OPUS_OSCE", "OFF");
+    } else if dnn_enabled {
+        warn!("DNN features enabled (DRED + OSCE)");
+        config.define("OPUS_DRED", "ON");
+        config.define("OPUS_OSCE", "ON");
+        // Use runtime weight loading - weight data files are too large to embed (~83MB)
+        // Users must call OPUS_SET_DNN_BLOB() to provide weights at runtime
+        warn!("DNN weights will be loaded at runtime via OPUS_SET_DNN_BLOB()");
+        config.define("OPUS_RUNTIME_WEIGHTS", "ON");
     } else {
-        if dred_enabled {
-            warn!("DRED feature enabled");
-            config.define("OPUS_DRED", "ON");
-        } else {
-            config.define("OPUS_DRED", "OFF");
-        }
-
-        if osce_enabled {
-            warn!("OSCE feature enabled");
-            config.define("OPUS_OSCE", "ON");
-        } else {
-            config.define("OPUS_OSCE", "OFF");
-        }
+        config.define("OPUS_DRED", "OFF");
+        config.define("OPUS_OSCE", "OFF");
     }
 
     // Performance optimizations

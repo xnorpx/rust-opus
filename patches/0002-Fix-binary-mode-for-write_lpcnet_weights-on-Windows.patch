@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: rust-opus <rust-opus@example.com>
+Date: Sat, 1 Feb 2026 00:00:00 +0000
+Subject: [PATCH] Fix binary mode for write_lpcnet_weights on Windows
+
+On Windows, fopen() in text mode ("w") converts LF (0x0A) to CRLF (0x0D 0x0A),
+which corrupts the binary weight data. This causes the weight blob to have
+incorrect size and corrupted data that fails to parse.
+
+The fix is to use binary mode ("wb") to ensure bytes are written exactly
+as specified without any newline translation.
+
+This is a cross-platform fix - binary mode works correctly on all platforms.
+---
+ dnn/write_lpcnet_weights.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dnn/write_lpcnet_weights.c b/dnn/write_lpcnet_weights.c
+index 2f80b96..63b4dd4 100644
+--- a/dnn/write_lpcnet_weights.c
++++ b/dnn/write_lpcnet_weights.c
+@@ -78,7 +78,7 @@ void write_weights(const WeightArray *list, FILE *fout)
+ 
+ int main(void)
+ {
+-  FILE *fout = fopen("weights_blob.bin", "w");
++  FILE *fout = fopen("weights_blob.bin", "wb");  /* Use binary mode for Windows compatibility */
+   write_weights(pitchdnn_arrays, fout);
+   write_weights(fargan_arrays, fout);
+   write_weights(plcmodel_arrays, fout);
+-- 
+2.39.0
+

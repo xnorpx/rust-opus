@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Build and generate weights on Linux (fast compilation)
+  generate-weights:
+    name: Generate DNN Weights
+    runs-on: ubuntu-latest
+    outputs:
+      bin_name: ${{ steps.generate.outputs.bin_name }}
+      md5_name: ${{ steps.generate.outputs.md5_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Generate weights
+        id: generate
+        run: |
+          python3 generate_weights.py
+          
+          # Get the generated filenames
+          BIN_FILE=$(ls target/model/*.bin)
+          MD5_FILE=$(ls target/model/*.bin.md5)
+          
+          echo "bin_name=$(basename $BIN_FILE)" >> $GITHUB_OUTPUT
+          echo "md5_name=$(basename $MD5_FILE)" >> $GITHUB_OUTPUT
+          
+          # Display info
+          echo "Generated files:"
+          ls -la target/model/
+          echo ""
+          echo "MD5 checksum:"
+          cat $MD5_FILE
+
+      - name: Upload weights artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dnn-weights
+          path: |
+            target/model/*.bin
+            target/model/*.bin.md5
+          retention-days: 1
+
+  # Create GitHub release and upload assets
+  release:
+    name: Create Release
+    needs: generate-weights
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download weights artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dnn-weights
+          path: release-assets
+
+      - name: Get version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Extract Cargo.toml version
+        id: cargo_version
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "cargo_version=$CARGO_VERSION" >> $GITHUB_OUTPUT
+          echo "Cargo.toml version: $CARGO_VERSION"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.version.outputs.version }}
+          body: |
+            ## opus-head-sys ${{ steps.version.outputs.version }}
+            
+            FFI bindings to the Opus audio codec with DRED and OSCE support.
+            
+            ### DNN Weights
+            
+            When using DRED or OSCE features, you need to load the DNN weights at runtime using `OPUS_SET_DNN_BLOB()`.
+            
+            Download the weights file below and load it in your application:
+            - **${{ needs.generate-weights.outputs.bin_name }}** - DNN weights blob
+            - **${{ needs.generate-weights.outputs.md5_name }}** - MD5 checksum
+            
+            ### Installation
+            
+            ```toml
+            [dependencies]
+            opus-head-sys = "${{ steps.cargo_version.outputs.cargo_version }}"
+            ```
+            
+            See the [README](https://github.com/xnorpx/rust-opus#readme) for usage instructions.
+          files: |
+            release-assets/${{ needs.generate-weights.outputs.bin_name }}
+            release-assets/${{ needs.generate-weights.outputs.md5_name }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
