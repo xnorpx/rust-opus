@@ -19,6 +19,12 @@ exclude = [
     "vendored/opus/doc/",
     "vendored/opus/tests/",
     "vendored/opus/training/",
+    "vendored/opus/dnn/**/*.pth",
+    "vendored/opus/dnn/**/*.ipynb",
+    "vendored/opus/dnn/**/*.tar",
+    "vendored/opus/dnn/**/*.py",
+    "vendored/opus/scripts/",
+    "vendored/opus/meson/",
 ]
 
 [dependencies]
