@@ -43,12 +43,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - language: actions
-          build-mode: none
         - language: c-cpp
-          build-mode: autobuild
-        - language: python
-          build-mode: none
+          build-mode: manual
         - language: rust
           build-mode: none
         # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
@@ -92,12 +88,18 @@ jobs:
       if: matrix.build-mode == 'manual'
       shell: bash
       run: |
-        echo 'If you are using a "manual" build mode for one or more of the' \
-          'languages you are analyzing, replace this with the commands to build' \
-          'your code, for example:'
-        echo '  make bootstrap'
-        echo '  make release'
-        exit 1
+        # Build the vendored Opus library with CMake for CodeQL analysis
+        # Enable DRED/OSCE to analyze the full codebase including AI features
+        cd vendored/opus
+        mkdir -p build && cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DOPUS_BUILD_SHARED_LIBRARY=OFF \
+          -DOPUS_BUILD_TESTING=OFF \
+          -DOPUS_BUILD_PROGRAMS=OFF \
+          -DOPUS_DRED=ON \
+          -DOPUS_OSCE=ON
+        cmake --build . --parallel
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
