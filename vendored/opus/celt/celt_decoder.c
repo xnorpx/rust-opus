@@ -178,6 +178,9 @@ void validate_celt_decoder(CELTDecoder *st)
 }
 #endif
 
+OPUS_CUSTOM_NOSTATIC int opus_custom_decoder_get_size(const CELTMode *mode, int channels);
+OPUS_CUSTOM_NOSTATIC int opus_custom_decoder_init(CELTDecoder *st, const CELTMode *mode, int channels);
+
 int celt_decoder_get_size(int channels)
 {
 #ifdef ENABLE_QEXT

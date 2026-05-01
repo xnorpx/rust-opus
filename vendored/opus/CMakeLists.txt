@@ -298,17 +298,6 @@ endif()
 add_library(opus ${opus_headers} ${opus_sources} ${opus_sources_float} ${Opus_PUBLIC_HEADER})
 add_library(Opus::opus ALIAS opus)
 
-set_source_files_properties(
-  src/analysis.c
-  dnn/burg.c
-  dnn/dred_rdovae_enc.c
-  dnn/dred_rdovae_dec.c
-  PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
-
-if(MSVC AND CMAKE_UNITY_BUILD)
-  target_compile_options(opus PRIVATE /wd4005)
-endif()
-
 get_library_version(OPUS_LIBRARY_VERSION OPUS_LIBRARY_VERSION_MAJOR)
 message(DEBUG "Opus library version: ${OPUS_LIBRARY_VERSION}")
 

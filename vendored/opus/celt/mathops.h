@@ -44,7 +44,9 @@
 #include "arm/mathops_arm.h"
 #endif
 
+#ifndef PI
 #define PI 3.1415926535897931
+#endif
 
 /* Multiplies two 16-bit fractional values. Bit-exactness of this macro is important */
 #define FRAC_MUL16(a,b) ((16384+((opus_int32)(opus_int16)(a)*(opus_int16)(b)))>>15)

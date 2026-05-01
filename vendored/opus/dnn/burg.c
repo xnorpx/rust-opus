@@ -37,11 +37,11 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "burg.h"
 
 #define MAX_FRAME_SIZE              384 /* subfr_length * nb_subfr = ( 0.005 * 16000 + 16 ) * 4 = 384*/
-#define SILK_MAX_ORDER_LPC          16
+#define LPCNET_MAX_ORDER_LPC        16
 #define FIND_LPC_COND_FAC           1e-5f
 
 /* sum of squares of a silk_float array, with result as double */
-static double silk_energy_FLP(
+static double lpcnet_energy_FLP(
     const float    *data,
     int            dataSize
 )
@@ -68,7 +68,7 @@ static double silk_energy_FLP(
 }
 
 /* inner product of two silk_float arrays, with result as double */
-static double silk_inner_product_FLP(
+static double lpcnet_inner_product_FLP(
     const float    *data1,
     const float    *data2,
     int            dataSize
@@ -108,22 +108,22 @@ float silk_burg_analysis(              /* O    returns residual energy          
     int         k, n, s, reached_max_gain;
     double           C0, invGain, num, nrg_f, nrg_b, rc, Atmp, tmp1, tmp2;
     const float *x_ptr;
-    double           C_first_row[ SILK_MAX_ORDER_LPC ], C_last_row[ SILK_MAX_ORDER_LPC ];
-    double           CAf[ SILK_MAX_ORDER_LPC + 1 ], CAb[ SILK_MAX_ORDER_LPC + 1 ];
-    double           Af[ SILK_MAX_ORDER_LPC ];
+    double           C_first_row[ LPCNET_MAX_ORDER_LPC ], C_last_row[ LPCNET_MAX_ORDER_LPC ];
+    double           CAf[ LPCNET_MAX_ORDER_LPC + 1 ], CAb[ LPCNET_MAX_ORDER_LPC + 1 ];
+    double           Af[ LPCNET_MAX_ORDER_LPC ];
 
     assert( subfr_length * nb_subfr <= MAX_FRAME_SIZE );
 
     /* Compute autocorrelations, added over subframes */
-    C0 = silk_energy_FLP( x, nb_subfr * subfr_length );
-    memset( C_first_row, 0, SILK_MAX_ORDER_LPC * sizeof( double ) );
+    C0 = lpcnet_energy_FLP( x, nb_subfr * subfr_length );
+    memset( C_first_row, 0, LPCNET_MAX_ORDER_LPC * sizeof( double ) );
     for( s = 0; s < nb_subfr; s++ ) {
         x_ptr = x + s * subfr_length;
         for( n = 1; n < D + 1; n++ ) {
-            C_first_row[ n - 1 ] += silk_inner_product_FLP( x_ptr, x_ptr + n, subfr_length - n );
+            C_first_row[ n - 1 ] += lpcnet_inner_product_FLP( x_ptr, x_ptr + n, subfr_length - n );
         }
     }
-    memcpy( C_last_row, C_first_row, SILK_MAX_ORDER_LPC * sizeof( double ) );
+    memcpy( C_last_row, C_first_row, LPCNET_MAX_ORDER_LPC * sizeof( double ) );
 
     /* Initialize */
     CAb[ 0 ] = CAf[ 0 ] = C0 + FIND_LPC_COND_FAC * C0 + 1e-9f;

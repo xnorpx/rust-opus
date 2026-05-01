@@ -141,6 +141,8 @@ struct OpusCustomEncoder {
    /* celt_glog energyError[],  Size = channels*mode->nbEBands */
 };
 
+OPUS_CUSTOM_NOSTATIC int opus_custom_encoder_get_size(const CELTMode *mode, int channels);
+
 int celt_encoder_get_size(int channels)
 {
 #ifdef ENABLE_QEXT

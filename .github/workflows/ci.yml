@@ -138,14 +138,20 @@ jobs:
       - name: Build
         if: ${{ !matrix.android }}
         run: cargo build --target ${{ matrix.target }} --verbose
+        env:
+          OPUS_WARNINGS_AS_ERRORS: '1'
 
       - name: Build (Android)
         if: matrix.android
         run: cargo ndk -t ${{ matrix.target }} build --verbose
+        env:
+          OPUS_WARNINGS_AS_ERRORS: '1'
 
       - name: Run tests
         if: matrix.test
         run: cargo test --target ${{ matrix.target }} --verbose
+        env:
+          OPUS_WARNINGS_AS_ERRORS: '1'
 
   lint:
     name: Lint
