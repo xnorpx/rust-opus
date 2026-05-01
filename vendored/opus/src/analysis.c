@@ -54,7 +54,7 @@
 
 #define TRANSITION_PENALTY 10
 
-static const float dct_table[128] = {
+static const float analysis_dct_table[128] = {
         0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f,
         0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f,
         0.351851f, 0.338330f, 0.311806f, 0.273300f, 0.224292f, 0.166664f, 0.102631f, 0.034654f,
@@ -861,14 +861,14 @@ static void tonality_analysis(TonalityAnalysisState *tonal, const CELTMode *celt
     {
        float sum=0;
        for (b=0;b<16;b++)
-          sum += dct_table[i*16+b]*logE[b];
+          sum += analysis_dct_table[i*16+b]*logE[b];
        BFCC[i] = sum;
     }
     for (i=0;i<8;i++)
     {
        float sum=0;
        for (b=0;b<16;b++)
-          sum += dct_table[i*16+b]*.5f*(tonal->highE[b]+tonal->lowE[b]);
+          sum += analysis_dct_table[i*16+b]*.5f*(tonal->highE[b]+tonal->lowE[b]);
        midE[i] = sum;
     }
 

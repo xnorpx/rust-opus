@@ -81,7 +81,7 @@ void write_weights(const WeightArray *list, FILE *fout)
 
 int main(void)
 {
-  FILE *fout = fopen("weights_blob.bin", "wb");  /* Use binary mode for Windows compatibility */
+  FILE *fout = fopen("weights_blob.bin", "wb");
   write_weights(pitchdnn_arrays, fout);
   write_weights(fargan_arrays, fout);
   write_weights(plcmodel_arrays, fout);

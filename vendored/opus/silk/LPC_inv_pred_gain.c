@@ -139,3 +139,7 @@ opus_int32 silk_LPC_inverse_pred_gain_c(            /* O   Returns inverse predi
     }
     return LPC_inverse_pred_gain_QA_c( Atmp_QA, order );
 }
+
+#undef QA
+#undef A_LIMIT
+#undef MUL32_FRAC_Q

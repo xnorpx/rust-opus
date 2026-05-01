@@ -32,6 +32,10 @@
 #endif
 
 #define CELT_C
+#ifndef OVERRIDE_celt_fatal
+#define CELT_DEFINE_celt_fatal
+#define OVERRIDE_celt_fatal
+#endif
 
 #include "os_support.h"
 #include "mdct.h"
@@ -49,6 +53,27 @@
 #include <stdarg.h>
 #include "celt_lpc.h"
 #include "vq.h"
+
+#if defined(CELT_DEFINE_celt_fatal) && (defined(ENABLE_ASSERTIONS) || defined(ENABLE_HARDENING))
+#include <stdio.h>
+#include <stdlib.h>
+#ifdef __GNUC__
+__attribute__((noreturn))
+#endif
+void celt_fatal(const char *str, const char *file, int line)
+{
+   fprintf (stderr, "Fatal (internal) error in %s, line %d: %s\n", file, line, str);
+#if defined(_MSC_VER)
+   _set_abort_behavior( 0, _WRITE_ABORT_MSG);
+#endif
+   abort();
+}
+#endif
+
+#ifdef CELT_DEFINE_celt_fatal
+#undef CELT_DEFINE_celt_fatal
+#undef OVERRIDE_celt_fatal
+#endif
 
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "unknown"

@@ -1,0 +1,361 @@
+From: opus-head-sys maintainers
+Date: Fri, 1 May 2026 00:00:00 +0000
+Subject: [PATCH] build: make sources safe for CMake unity builds
+
+CMake unity builds merge multiple C translation units into generated source
+files. A few Opus sources rely on translation-unit isolation for static helper
+names, local macro names, or file-local object names. That causes collisions or
+implicit external declarations when those sources are included into one unity
+translation unit.
+
+Make the affected sources self-contained and unity-safe instead of excluding
+them from unity builds.
+---
+ celt/celt.c              | 25 +++++++++++++++++++++++++
+ celt/celt_decoder.c      |  3 +++
+ celt/celt_encoder.c      |  2 ++
+ celt/mathops.h           |  2 ++
+ dnn/burg.c               | 18 +++++++++---------
+ dnn/dred_rdovae_dec.c    | 12 ++++++------
+ dnn/dred_rdovae_enc.c    | 12 ++++++------
+ silk/LPC_inv_pred_gain.c |  4 ++++
+ silk/NLSF2A.c            |  5 +++++
+ silk/float/SigProc_FLP.h |  2 ++
+ src/analysis.c           |  6 +++---
+ 11 files changed, 67 insertions(+), 24 deletions(-)
+
+diff --git a/celt/celt.c b/celt/celt.c
+index c0db737..e9796d5 100644
+--- a/celt/celt.c
++++ b/celt/celt.c
+@@ -32,6 +32,10 @@
+ #endif
+ 
+ #define CELT_C
++#ifndef OVERRIDE_celt_fatal
++#define CELT_DEFINE_celt_fatal
++#define OVERRIDE_celt_fatal
++#endif
+ 
+ #include "os_support.h"
+ #include "mdct.h"
+@@ -50,6 +54,27 @@
+ #include "celt_lpc.h"
+ #include "vq.h"
+ 
++#if defined(CELT_DEFINE_celt_fatal) && (defined(ENABLE_ASSERTIONS) || defined(ENABLE_HARDENING))
++#include <stdio.h>
++#include <stdlib.h>
++#ifdef __GNUC__
++__attribute__((noreturn))
++#endif
++void celt_fatal(const char *str, const char *file, int line)
++{
++   fprintf (stderr, "Fatal (internal) error in %s, line %d: %s\n", file, line, str);
++#if defined(_MSC_VER)
++   _set_abort_behavior( 0, _WRITE_ABORT_MSG);
++#endif
++   abort();
++}
++#endif
++
++#ifdef CELT_DEFINE_celt_fatal
++#undef CELT_DEFINE_celt_fatal
++#undef OVERRIDE_celt_fatal
++#endif
++
+ #ifndef PACKAGE_VERSION
+ #define PACKAGE_VERSION "unknown"
+ #endif
+diff --git a/celt/celt_decoder.c b/celt/celt_decoder.c
+index aba91c1..179c236 100644
+--- a/celt/celt_decoder.c
++++ b/celt/celt_decoder.c
+@@ -178,6 +178,9 @@ void validate_celt_decoder(CELTDecoder *st)
+ }
+ #endif
+ 
++OPUS_CUSTOM_NOSTATIC int opus_custom_decoder_get_size(const CELTMode *mode, int channels);
++OPUS_CUSTOM_NOSTATIC int opus_custom_decoder_init(CELTDecoder *st, const CELTMode *mode, int channels);
++
+ int celt_decoder_get_size(int channels)
+ {
+ #ifdef ENABLE_QEXT
+diff --git a/celt/celt_encoder.c b/celt/celt_encoder.c
+index de1a2c9..344acd2 100644
+--- a/celt/celt_encoder.c
++++ b/celt/celt_encoder.c
+@@ -141,6 +141,8 @@ struct OpusCustomEncoder {
+    /* celt_glog energyError[],  Size = channels*mode->nbEBands */
+ };
+ 
++OPUS_CUSTOM_NOSTATIC int opus_custom_encoder_get_size(const CELTMode *mode, int channels);
++
+ int celt_encoder_get_size(int channels)
+ {
+ #ifdef ENABLE_QEXT
+diff --git a/celt/mathops.h b/celt/mathops.h
+index 4b6fa15..404ac89 100644
+--- a/celt/mathops.h
++++ b/celt/mathops.h
+@@ -44,7 +44,9 @@
+ #include "arm/mathops_arm.h"
+ #endif
+ 
++#ifndef PI
+ #define PI 3.1415926535897931
++#endif
+ 
+ /* Multiplies two 16-bit fractional values. Bit-exactness of this macro is important */
+ #define FRAC_MUL16(a,b) ((16384+((opus_int32)(opus_int16)(a)*(opus_int16)(b)))>>15)
+diff --git a/dnn/burg.c b/dnn/burg.c
+index 3d6b23b..8755bc0 100644
+--- a/dnn/burg.c
++++ b/dnn/burg.c
+@@ -37,11 +37,11 @@ POSSIBILITY OF SUCH DAMAGE.
+ #include "burg.h"
+ 
+ #define MAX_FRAME_SIZE              384 /* subfr_length * nb_subfr = ( 0.005 * 16000 + 16 ) * 4 = 384*/
+-#define SILK_MAX_ORDER_LPC          16
++#define LPCNET_MAX_ORDER_LPC        16
+ #define FIND_LPC_COND_FAC           1e-5f
+ 
+ /* sum of squares of a silk_float array, with result as double */
+-static double silk_energy_FLP(
++static double lpcnet_energy_FLP(
+     const float    *data,
+     int            dataSize
+ )
+@@ -68,7 +68,7 @@ static double silk_energy_FLP(
+ }
+ 
+ /* inner product of two silk_float arrays, with result as double */
+-static double silk_inner_product_FLP(
++static double lpcnet_inner_product_FLP(
+     const float    *data1,
+     const float    *data2,
+     int            dataSize
+@@ -108,22 +108,22 @@ float silk_burg_analysis(              /* O    returns residual energy
+     int         k, n, s, reached_max_gain;
+     double           C0, invGain, num, nrg_f, nrg_b, rc, Atmp, tmp1, tmp2;
+     const float *x_ptr;
+-    double           C_first_row[ SILK_MAX_ORDER_LPC ], C_last_row[ SILK_MAX_ORDER_LPC ];
+-    double           CAf[ SILK_MAX_ORDER_LPC + 1 ], CAb[ SILK_MAX_ORDER_LPC + 1 ];
+-    double           Af[ SILK_MAX_ORDER_LPC ];
++    double           C_first_row[ LPCNET_MAX_ORDER_LPC ], C_last_row[ LPCNET_MAX_ORDER_LPC ];
++    double           CAf[ LPCNET_MAX_ORDER_LPC + 1 ], CAb[ LPCNET_MAX_ORDER_LPC + 1 ];
++    double           Af[ LPCNET_MAX_ORDER_LPC ];
+ 
+     assert( subfr_length * nb_subfr <= MAX_FRAME_SIZE );
+ 
+     /* Compute autocorrelations, added over subframes */
+-    C0 = silk_energy_FLP( x, nb_subfr * subfr_length );
+-    memset( C_first_row, 0, SILK_MAX_ORDER_LPC * sizeof( double ) );
++    C0 = lpcnet_energy_FLP( x, nb_subfr * subfr_length );
++    memset( C_first_row, 0, LPCNET_MAX_ORDER_LPC * sizeof( double ) );
+     for( s = 0; s < nb_subfr; s++ ) {
+         x_ptr = x + s * subfr_length;
+         for( n = 1; n < D + 1; n++ ) {
+-            C_first_row[ n - 1 ] += silk_inner_product_FLP( x_ptr, x_ptr + n, subfr_length - n );
++            C_first_row[ n - 1 ] += lpcnet_inner_product_FLP( x_ptr, x_ptr + n, subfr_length - n );
+         }
+     }
+-    memcpy( C_last_row, C_first_row, SILK_MAX_ORDER_LPC * sizeof( double ) );
++    memcpy( C_last_row, C_first_row, LPCNET_MAX_ORDER_LPC * sizeof( double ) );
+ 
+     /* Initialize */
+     CAb[ 0 ] = CAf[ 0 ] = C0 + FIND_LPC_COND_FAC * C0 + 1e-9f;
+diff --git a/dnn/dred_rdovae_dec.c b/dnn/dred_rdovae_dec.c
+index 0c01a3b..c1425f9 100644
+--- a/dnn/dred_rdovae_dec.c
++++ b/dnn/dred_rdovae_dec.c
+@@ -33,7 +33,7 @@
+ #include "dred_rdovae_constants.h"
+ #include "os_support.h"
+ 
+-static void conv1_cond_init(float *mem, int len, int dilation, int *init)
++static void dred_rdovae_dec_conv1_cond_init(float *mem, int len, int dilation, int *init)
+ {
+     if (!*init) {
+         int i;
+@@ -104,7 +104,7 @@ void dred_rdovae_decode_qframe(
+     compute_generic_gru(&model->dec_gru1_input, &model->dec_gru1_recurrent, dec_state->gru1_state, buffer, arch);
+     compute_glu(&model->dec_glu1, &buffer[output_index], dec_state->gru1_state, arch);
+     output_index += DEC_GRU1_OUT_SIZE;
+-    conv1_cond_init(dec_state->conv1_state, DEC_CONV1_IN_SIZE, 1, &dec_state->initialized);
++    dred_rdovae_dec_conv1_cond_init(dec_state->conv1_state, DEC_CONV1_IN_SIZE, 1, &dec_state->initialized);
+     compute_generic_dense(&model->dec_conv_dense1, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d(&model->dec_conv1, &buffer[output_index], dec_state->conv1_state, conv_tmp, DEC_CONV1_OUT_SIZE, ACTIVATION_TANH, arch);
+     output_index += DEC_CONV1_OUT_SIZE;
+@@ -112,7 +112,7 @@ void dred_rdovae_decode_qframe(
+     compute_generic_gru(&model->dec_gru2_input, &model->dec_gru2_recurrent, dec_state->gru2_state, buffer, arch);
+     compute_glu(&model->dec_glu2, &buffer[output_index], dec_state->gru2_state, arch);
+     output_index += DEC_GRU2_OUT_SIZE;
+-    conv1_cond_init(dec_state->conv2_state, DEC_CONV2_IN_SIZE, 1, &dec_state->initialized);
++    dred_rdovae_dec_conv1_cond_init(dec_state->conv2_state, DEC_CONV2_IN_SIZE, 1, &dec_state->initialized);
+     compute_generic_dense(&model->dec_conv_dense2, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d(&model->dec_conv2, &buffer[output_index], dec_state->conv2_state, conv_tmp, DEC_CONV2_OUT_SIZE, ACTIVATION_TANH, arch);
+     output_index += DEC_CONV2_OUT_SIZE;
+@@ -120,7 +120,7 @@ void dred_rdovae_decode_qframe(
+     compute_generic_gru(&model->dec_gru3_input, &model->dec_gru3_recurrent, dec_state->gru3_state, buffer, arch);
+     compute_glu(&model->dec_glu3, &buffer[output_index], dec_state->gru3_state, arch);
+     output_index += DEC_GRU3_OUT_SIZE;
+-    conv1_cond_init(dec_state->conv3_state, DEC_CONV3_IN_SIZE, 1, &dec_state->initialized);
++    dred_rdovae_dec_conv1_cond_init(dec_state->conv3_state, DEC_CONV3_IN_SIZE, 1, &dec_state->initialized);
+     compute_generic_dense(&model->dec_conv_dense3, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d(&model->dec_conv3, &buffer[output_index], dec_state->conv3_state, conv_tmp, DEC_CONV3_OUT_SIZE, ACTIVATION_TANH, arch);
+     output_index += DEC_CONV3_OUT_SIZE;
+@@ -128,7 +128,7 @@ void dred_rdovae_decode_qframe(
+     compute_generic_gru(&model->dec_gru4_input, &model->dec_gru4_recurrent, dec_state->gru4_state, buffer, arch);
+     compute_glu(&model->dec_glu4, &buffer[output_index], dec_state->gru4_state, arch);
+     output_index += DEC_GRU4_OUT_SIZE;
+-    conv1_cond_init(dec_state->conv4_state, DEC_CONV4_IN_SIZE, 1, &dec_state->initialized);
++    dred_rdovae_dec_conv1_cond_init(dec_state->conv4_state, DEC_CONV4_IN_SIZE, 1, &dec_state->initialized);
+     compute_generic_dense(&model->dec_conv_dense4, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d(&model->dec_conv4, &buffer[output_index], dec_state->conv4_state, conv_tmp, DEC_CONV4_OUT_SIZE, ACTIVATION_TANH, arch);
+     output_index += DEC_CONV4_OUT_SIZE;
+@@ -136,7 +136,7 @@ void dred_rdovae_decode_qframe(
+     compute_generic_gru(&model->dec_gru5_input, &model->dec_gru5_recurrent, dec_state->gru5_state, buffer, arch);
+     compute_glu(&model->dec_glu5, &buffer[output_index], dec_state->gru5_state, arch);
+     output_index += DEC_GRU5_OUT_SIZE;
+-    conv1_cond_init(dec_state->conv5_state, DEC_CONV5_IN_SIZE, 1, &dec_state->initialized);
++    dred_rdovae_dec_conv1_cond_init(dec_state->conv5_state, DEC_CONV5_IN_SIZE, 1, &dec_state->initialized);
+     compute_generic_dense(&model->dec_conv_dense5, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d(&model->dec_conv5, &buffer[output_index], dec_state->conv5_state, conv_tmp, DEC_CONV5_OUT_SIZE, ACTIVATION_TANH, arch);
+     output_index += DEC_CONV5_OUT_SIZE;
+diff --git a/dnn/dred_rdovae_enc.c b/dnn/dred_rdovae_enc.c
+index 22b0f90..be722e9 100644
+--- a/dnn/dred_rdovae_enc.c
++++ b/dnn/dred_rdovae_enc.c
+@@ -36,7 +36,7 @@
+ #include "os_support.h"
+ #include "dred_rdovae_constants.h"
+ 
+-static void conv1_cond_init(float *mem, int len, int dilation, int *init)
++static void dred_rdovae_enc_conv1_cond_init(float *mem, int len, int dilation, int *init)
+ {
+     if (!*init) {
+         int i;
+@@ -69,7 +69,7 @@ void dred_rdovae_encode_dframe(
+     compute_generic_gru(&model->enc_gru1_input, &model->enc_gru1_recurrent, enc_state->gru1_state, buffer, arch);
+     OPUS_COPY(&buffer[output_index], enc_state->gru1_state, ENC_GRU1_OUT_SIZE);
+     output_index += ENC_GRU1_OUT_SIZE;
+-    conv1_cond_init(enc_state->conv1_state, ENC_CONV1_IN_SIZE, 1, &enc_state->initialized);
++    dred_rdovae_enc_conv1_cond_init(enc_state->conv1_state, ENC_CONV1_IN_SIZE, 1, &enc_state->initialized);
+     compute_generic_dense(&model->enc_conv_dense1, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d(&model->enc_conv1, &buffer[output_index], enc_state->conv1_state, conv_tmp, ENC_CONV1_OUT_SIZE, ACTIVATION_TANH, arch);
+     output_index += ENC_CONV1_OUT_SIZE;
+@@ -77,7 +77,7 @@ void dred_rdovae_encode_dframe(
+     compute_generic_gru(&model->enc_gru2_input, &model->enc_gru2_recurrent, enc_state->gru2_state, buffer, arch);
+     OPUS_COPY(&buffer[output_index], enc_state->gru2_state, ENC_GRU2_OUT_SIZE);
+     output_index += ENC_GRU2_OUT_SIZE;
+-    conv1_cond_init(enc_state->conv2_state, ENC_CONV2_IN_SIZE, 2, &enc_state->initialized);
++    dred_rdovae_enc_conv1_cond_init(enc_state->conv2_state, ENC_CONV2_IN_SIZE, 2, &enc_state->initialized);
+     compute_generic_dense(&model->enc_conv_dense2, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d_dilation(&model->enc_conv2, &buffer[output_index], enc_state->conv2_state, conv_tmp, ENC_CONV2_OUT_SIZE, 2, ACTIVATION_TANH, arch);
+     output_index += ENC_CONV2_OUT_SIZE;
+@@ -85,7 +85,7 @@ void dred_rdovae_encode_dframe(
+     compute_generic_gru(&model->enc_gru3_input, &model->enc_gru3_recurrent, enc_state->gru3_state, buffer, arch);
+     OPUS_COPY(&buffer[output_index], enc_state->gru3_state, ENC_GRU3_OUT_SIZE);
+     output_index += ENC_GRU3_OUT_SIZE;
+-    conv1_cond_init(enc_state->conv3_state, ENC_CONV3_IN_SIZE, 2, &enc_state->initialized);
++    dred_rdovae_enc_conv1_cond_init(enc_state->conv3_state, ENC_CONV3_IN_SIZE, 2, &enc_state->initialized);
+     compute_generic_dense(&model->enc_conv_dense3, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d_dilation(&model->enc_conv3, &buffer[output_index], enc_state->conv3_state, conv_tmp, ENC_CONV3_OUT_SIZE, 2, ACTIVATION_TANH, arch);
+     output_index += ENC_CONV3_OUT_SIZE;
+@@ -93,7 +93,7 @@ void dred_rdovae_encode_dframe(
+     compute_generic_gru(&model->enc_gru4_input, &model->enc_gru4_recurrent, enc_state->gru4_state, buffer, arch);
+     OPUS_COPY(&buffer[output_index], enc_state->gru4_state, ENC_GRU4_OUT_SIZE);
+     output_index += ENC_GRU4_OUT_SIZE;
+-    conv1_cond_init(enc_state->conv4_state, ENC_CONV4_IN_SIZE, 2, &enc_state->initialized);
++    dred_rdovae_enc_conv1_cond_init(enc_state->conv4_state, ENC_CONV4_IN_SIZE, 2, &enc_state->initialized);
+     compute_generic_dense(&model->enc_conv_dense4, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d_dilation(&model->enc_conv4, &buffer[output_index], enc_state->conv4_state, conv_tmp, ENC_CONV4_OUT_SIZE, 2, ACTIVATION_TANH, arch);
+     output_index += ENC_CONV4_OUT_SIZE;
+@@ -101,7 +101,7 @@ void dred_rdovae_encode_dframe(
+     compute_generic_gru(&model->enc_gru5_input, &model->enc_gru5_recurrent, enc_state->gru5_state, buffer, arch);
+     OPUS_COPY(&buffer[output_index], enc_state->gru5_state, ENC_GRU5_OUT_SIZE);
+     output_index += ENC_GRU5_OUT_SIZE;
+-    conv1_cond_init(enc_state->conv5_state, ENC_CONV5_IN_SIZE, 2, &enc_state->initialized);
++    dred_rdovae_enc_conv1_cond_init(enc_state->conv5_state, ENC_CONV5_IN_SIZE, 2, &enc_state->initialized);
+     compute_generic_dense(&model->enc_conv_dense5, conv_tmp, buffer, ACTIVATION_TANH, arch);
+     compute_generic_conv1d_dilation(&model->enc_conv5, &buffer[output_index], enc_state->conv5_state, conv_tmp, ENC_CONV5_OUT_SIZE, 2, ACTIVATION_TANH, arch);
+     output_index += ENC_CONV5_OUT_SIZE;
+diff --git a/silk/LPC_inv_pred_gain.c b/silk/LPC_inv_pred_gain.c
+index a3746a6..410853c 100644
+--- a/silk/LPC_inv_pred_gain.c
++++ b/silk/LPC_inv_pred_gain.c
+@@ -139,3 +139,7 @@ opus_int32 silk_LPC_inverse_pred_gain_c(            /* O   Returns inverse predi
+     }
+     return LPC_inverse_pred_gain_QA_c( Atmp_QA, order );
+ }
++
++#undef QA
++#undef A_LIMIT
++#undef MUL32_FRAC_Q
+diff --git a/silk/NLSF2A.c b/silk/NLSF2A.c
+index fcddc54..d74a2c5 100644
+--- a/silk/NLSF2A.c
++++ b/silk/NLSF2A.c
+@@ -38,6 +38,9 @@ POSSIBILITY OF SUCH DAMAGE.
+ #include "SigProc_FIX.h"
+ #include "tables.h"
+ 
++#ifdef QA
++#undef QA
++#endif
+ #define QA      16
+ 
+ /* helper function for NLSF2A(..) */
+@@ -138,3 +141,5 @@ void silk_NLSF2A(
+         }
+     }
+ }
++
++#undef QA
+diff --git a/silk/float/SigProc_FLP.h b/silk/float/SigProc_FLP.h
+index 783099b..97f02e6 100644
+--- a/silk/float/SigProc_FLP.h
++++ b/silk/float/SigProc_FLP.h
+@@ -144,7 +144,9 @@ double silk_energy_FLP(
+ /*                                MACROS                            */
+ /********************************************************************/
+ 
++#ifndef PI
+ #define PI              (3.1415926536f)
++#endif
+ 
+ #define silk_min_float( a, b )                  (((a) < (b)) ? (a) :  (b))
+ #define silk_max_float( a, b )                  (((a) > (b)) ? (a) :  (b))
+diff --git a/src/analysis.c b/src/analysis.c
+index c353230..55a8aae 100644
+--- a/src/analysis.c
++++ b/src/analysis.c
+@@ -54,7 +54,7 @@
+ 
+ #define TRANSITION_PENALTY 10
+ 
+-static const float dct_table[128] = {
++static const float analysis_dct_table[128] = {
+         0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f,
+         0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f, 0.250000f,
+         0.351851f, 0.338330f, 0.311806f, 0.273300f, 0.224292f, 0.166664f, 0.102631f, 0.034654f,
+@@ -861,14 +861,14 @@ static void tonality_analysis(TonalityAnalysisState *tonal, const CELTMode *celt
+     {
+        float sum=0;
+        for (b=0;b<16;b++)
+-          sum += dct_table[i*16+b]*logE[b];
++          sum += analysis_dct_table[i*16+b]*logE[b];
+        BFCC[i] = sum;
+     }
+     for (i=0;i<8;i++)
+     {
+        float sum=0;
+        for (b=0;b<16;b++)
+-          sum += dct_table[i*16+b]*.5f*(tonal->highE[b]+tonal->lowE[b]);
++          sum += analysis_dct_table[i*16+b]*.5f*(tonal->highE[b]+tonal->lowE[b]);
+        midE[i] = sum;
+     }
+ 
+-- 
+2.39.0

@@ -50,6 +50,10 @@ fn build_opus() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_FEATURE");
+    println!("cargo:rerun-if-env-changed=OPUS_WARNINGS_AS_ERRORS");
+    println!("cargo:rerun-if-env-changed=OPUS_MSVC_WARNINGS_AS_ERRORS");
+
+    configure_warnings_as_errors(&target_os, &target_env);
 
     let mut config = Config::new(&opus_dir);
 
@@ -63,6 +67,7 @@ fn build_opus() -> Result<(), Box<dyn std::error::Error>> {
 
     config
         .profile(profile)
+        .define("CMAKE_UNITY_BUILD", "ON")
         .define("OPUS_BUILD_SHARED_LIBRARY", "OFF")
         .define("OPUS_BUILD_TESTING", "OFF")
         .define("OPUS_BUILD_PROGRAMS", "OFF")
@@ -124,6 +129,47 @@ fn configure_msvc_runtime(
             .define("OPUS_STATIC_RUNTIME", "OFF")
             .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
     }
+}
+
+fn configure_warnings_as_errors(target_os: &str, target_env: &str) {
+    if !env_flag_enabled("OPUS_WARNINGS_AS_ERRORS")
+        && !env_flag_enabled("OPUS_MSVC_WARNINGS_AS_ERRORS")
+    {
+        return;
+    }
+
+    let flags = if target_os == "windows" && target_env == "msvc" {
+        warn!("C warnings as errors enabled for MSVC (/W3 /WX)");
+        ["/W3", "/WX"].as_slice()
+    } else {
+        warn!("C warnings as errors enabled (-Werror)");
+        ["-Werror"].as_slice()
+    };
+
+    let mut cflags = env::var("CFLAGS").unwrap_or_default();
+    for flag in flags {
+        if !cflags
+            .split_whitespace()
+            .any(|existing| existing.eq_ignore_ascii_case(flag))
+        {
+            if !cflags.is_empty() {
+                cflags.push(' ');
+            }
+            cflags.push_str(flag);
+        }
+    }
+    env::set_var("CFLAGS", cflags);
+}
+
+fn env_flag_enabled(name: &str) -> bool {
+    env::var(name)
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 fn configure_for_platform(
