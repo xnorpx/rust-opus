@@ -19,7 +19,9 @@ fn main() {
 
 fn build_opus() -> Result<(), Box<dyn std::error::Error>> {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    let target_features = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or_default();
     let target_triple = env::var("TARGET")?;
 
     // Skip build for WASM targets
@@ -47,6 +49,7 @@ fn build_opus() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=vendored/opus");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_FEATURE");
 
     let mut config = Config::new(&opus_dir);
 
@@ -65,6 +68,8 @@ fn build_opus() -> Result<(), Box<dyn std::error::Error>> {
         .define("OPUS_BUILD_PROGRAMS", "OFF")
         .define("OPUS_INSTALL_PKG_CONFIG_MODULE", "OFF")
         .define("OPUS_INSTALL_CMAKE_CONFIG_MODULE", "OFF");
+
+    configure_msvc_runtime(&mut config, &target_os, &target_env, &target_features);
 
     // Platform-specific configuration
     configure_for_platform(&mut config, &target_os, &target_arch, &target_triple);
@@ -91,6 +96,34 @@ fn build_opus() -> Result<(), Box<dyn std::error::Error>> {
 
     warn!("Opus build complete");
     Ok(())
+}
+
+fn configure_msvc_runtime(
+    config: &mut Config,
+    target_os: &str,
+    target_env: &str,
+    target_features: &str,
+) {
+    if target_os != "windows" || target_env != "msvc" {
+        return;
+    }
+
+    config.define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW");
+
+    if target_features
+        .split(',')
+        .any(|feature| feature.trim() == "crt-static")
+    {
+        warn!("Windows MSVC static CRT detected, enabling Opus static runtime");
+        config
+            .define("OPUS_STATIC_RUNTIME", "ON")
+            .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreaded");
+    } else {
+        warn!("Windows MSVC dynamic CRT detected, enabling Opus dynamic runtime");
+        config
+            .define("OPUS_STATIC_RUNTIME", "OFF")
+            .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
+    }
 }
 
 fn configure_for_platform(
