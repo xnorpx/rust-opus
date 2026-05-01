@@ -13,6 +13,7 @@ import subprocess
 import shutil
 import platform
 import tempfile
+import stat
 from datetime import datetime
 from pathlib import Path
 import urllib.request
@@ -34,6 +35,15 @@ def run_command(cmd, cwd=None, check=True):
         print(f"STDERR: {result.stderr}")
         raise RuntimeError(f"Command failed with code {result.returncode}")
     return result
+
+
+def remove_tree(path):
+    """Remove a directory tree, clearing read-only bits when Windows needs it."""
+    def retry_with_writable(func, failed_path, _exc_info):
+        os.chmod(failed_path, stat.S_IWRITE)
+        func(failed_path)
+
+    shutil.rmtree(path, onerror=retry_with_writable)
 
 
 def get_latest_commit_info(repo_owner, repo_name, branch="main"):
@@ -70,7 +80,7 @@ def clone_repo(repo_url, target_dir, commit=None):
     """Clone a repository to the target directory."""
     if target_dir.exists():
         print(f"Removing existing directory: {target_dir}")
-        shutil.rmtree(target_dir)
+        remove_tree(target_dir)
     
     target_dir.parent.mkdir(parents=True, exist_ok=True)
     
@@ -94,7 +104,7 @@ def clone_repo(repo_url, target_dir, commit=None):
         import time
         for attempt in range(3):
             try:
-                shutil.rmtree(git_dir)
+                remove_tree(git_dir)
                 break
             except PermissionError as e:
                 if attempt < 2:
@@ -180,49 +190,61 @@ def download_opus_model(opus_dir, model_hash):
             print(f"  Warning: {download_script} not found")
 
 
-def patch_cmake_for_runtime_weights(opus_dir):
-    """
-    Apply the OPUS_RUNTIME_WEIGHTS patch to Opus CMakeLists.txt.
-    
-    This patch adds a CMake option that:
-    1. Defines USE_WEIGHTS_FILE at compile time
-    2. Filters out the large *_data.c files from the build (~83MB)
-    
-    The patch file is located at patches/0001-Add-OPUS_RUNTIME_WEIGHTS-cmake-option.patch
-    and can be submitted upstream to the Opus project.
-    """
-    cmake_file = opus_dir / "CMakeLists.txt"
-    if not cmake_file.exists():
-        print("  Warning: CMakeLists.txt not found")
-        return False
-    
-    content = cmake_file.read_text()
-    
-    # Check if already patched
-    if "OPUS_RUNTIME_WEIGHTS" in content:
-        print("  CMakeLists.txt already patched")
-        return True
-    
-    # Find the patch file
+def configure_bindgen_environment():
+    """Expose libclang to bindgen on Windows when LLVM is installed normally."""
+    if platform.system() != "Windows" or os.environ.get("LIBCLANG_PATH"):
+        return
+
+    candidates = [
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "LLVM" / "bin",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "LLVM" / "bin",
+    ]
+
+    for candidate in candidates:
+        if (candidate / "libclang.dll").exists():
+            os.environ["LIBCLANG_PATH"] = str(candidate)
+            os.environ["PATH"] = f"{candidate}{os.pathsep}{os.environ.get('PATH', '')}"
+            print(f"Using libclang from {candidate}")
+            return
+
+
+def apply_vendor_patches(opus_dir):
+    """Apply the local patch series to the vendored Opus source."""
     project_dir = Path(__file__).parent.resolve()
-    patch_file = project_dir / "patches" / "0001-Add-OPUS_RUNTIME_WEIGHTS-cmake-option.patch"
-    
-    if not patch_file.exists():
-        print(f"  Error: Patch file not found at {patch_file}")
-        return False
-    
-    # Apply the patch using git apply
-    result = run_command(
-        ["git", "apply", str(patch_file)],
-        cwd=opus_dir,
-        check=False
-    )
-    if result.returncode == 0:
-        print("  Applied OPUS_RUNTIME_WEIGHTS patch")
-        return True
-    else:
-        print(f"  Error: git apply failed: {result.stderr}")
-        return False
+    patches_dir = project_dir / "patches"
+    patch_files = sorted(patches_dir.glob("*.patch"))
+    patch_dir_arg = opus_dir.relative_to(project_dir).as_posix()
+
+    if not patch_files:
+        print("  No local patches to apply")
+        return
+
+    for patch_file in patch_files:
+        check_result = run_command(
+            ["git", "apply", "--check", f"--directory={patch_dir_arg}", str(patch_file)],
+            cwd=project_dir,
+            check=False,
+        )
+        if check_result.returncode == 0:
+            run_command(
+                ["git", "apply", f"--directory={patch_dir_arg}", str(patch_file)],
+                cwd=project_dir,
+            )
+            print(f"  Applied: {patch_file.name}")
+            continue
+
+        reverse_check = run_command(
+            ["git", "apply", "--reverse", "--check", f"--directory={patch_dir_arg}", str(patch_file)],
+            cwd=project_dir,
+            check=False,
+        )
+        if reverse_check.returncode == 0:
+            print(f"  Already applied: {patch_file.name}")
+            continue
+
+        raise RuntimeError(
+            f"Patch does not apply: {patch_file.name}\n{check_result.stderr}"
+        )
 
 
 def create_weight_stub_files(opus_dir):
@@ -296,6 +318,8 @@ def create_weight_stub_files(opus_dir):
 
 def generate_bindings(opus_dir, output_dir):
     """Generate Rust bindings using bindgen."""
+    configure_bindgen_environment()
+
     include_dir = opus_dir / "include"
     header_file = include_dir / "opus.h"
     
@@ -438,18 +462,18 @@ def main():
     except Exception as e:
         print(f"  Warning: model download failed (may be OK): {e}")
     
-    # Step 5: Patch CMake for OPUS_RUNTIME_WEIGHTS option
-    print("\n[5/7] Patching CMake for runtime weights support...")
-    patch_cmake_for_runtime_weights(opus_dir)
+    # Step 5: Apply local patches
+    print("\n[5/7] Applying local patches...")
+    apply_vendor_patches(opus_dir)
     
     # Step 6: Strip weight data from source files
     print("\n[6/7] Stripping weight data from source files...")
-    strip_weights_script = script_dir / "strip_weights.py"
+    strip_weights_script = project_dir / "strip_weights.py"
     if strip_weights_script.exists():
         import subprocess
         result = subprocess.run(
             [sys.executable, str(strip_weights_script)],
-            cwd=script_dir,
+            cwd=project_dir,
             capture_output=True,
             text=True
         )
