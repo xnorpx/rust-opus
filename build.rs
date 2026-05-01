@@ -63,6 +63,7 @@ fn build_opus() -> Result<(), Box<dyn std::error::Error>> {
 
     config
         .profile(profile)
+        .define("CMAKE_UNITY_BUILD", "ON")
         .define("OPUS_BUILD_SHARED_LIBRARY", "OFF")
         .define("OPUS_BUILD_TESTING", "OFF")
         .define("OPUS_BUILD_PROGRAMS", "OFF")

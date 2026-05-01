@@ -1,0 +1,39 @@
+From: opus-head-sys maintainers
+Date: Fri, 1 May 2026 00:00:00 +0000
+Subject: [PATCH] cmake: exclude conflicting sources from unity builds
+
+CMake unity builds merge multiple C translation units into generated source
+files. A few Opus sources are not safe to merge because they intentionally use
+translation-unit-local macro names, static helper names, or static object names
+that collide when included into the same generated source file.
+
+Keep unity builds enabled for the rest of the target, but compile those source
+files separately.
+---
+ CMakeLists.txt | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index fcf034b..56789ab 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -260,6 +260,17 @@ endif()
+ add_library(opus ${opus_headers} ${opus_sources} ${opus_sources_float} ${Opus_PUBLIC_HEADER})
+ add_library(Opus::opus ALIAS opus)
+ 
++set_source_files_properties(
++  src/analysis.c
++  dnn/burg.c
++  dnn/dred_rdovae_enc.c
++  dnn/dred_rdovae_dec.c
++  PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
++
++if(MSVC AND CMAKE_UNITY_BUILD)
++  target_compile_options(opus PRIVATE /wd4005)
++endif()
++
+ get_library_version(OPUS_LIBRARY_VERSION OPUS_LIBRARY_VERSION_MAJOR)
+ message(DEBUG "Opus library version: ${OPUS_LIBRARY_VERSION}")
+ 
+-- 
+2.39.0
