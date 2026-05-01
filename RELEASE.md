@@ -115,6 +115,12 @@ The model hash comes from `vendored/opus/autogen.sh`. If Opus updates their mode
 
 ## Release History
 
+### v0.2.0
+- Update vendored Opus snapshot and patch set
+- Enable CMake Unity builds for the vendored Opus build
+- Add source-level fixes for Unity build compatibility
+- Tighten CI warning checks across supported platforms
+
 ### v0.1.0
 - Initial release
 - FFI bindings to Opus codec
