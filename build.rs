@@ -79,6 +79,17 @@ fn build_opus() -> Result<(), Box<dyn std::error::Error>> {
     // Platform-specific configuration
     configure_for_platform(&mut config, &target_os, &target_arch, &target_triple);
 
+    // When building under cargo-fuzz, propagate ASan flags so AddressSanitizer
+    // can detect memory errors (buffer overflows, use-after-free, etc.) in the
+    // native Opus C code. CARGO_CFG_FUZZING is set by cargo-fuzz automatically.
+    if env::var("CARGO_CFG_FUZZING").is_ok() {
+        warn!("Fuzzing detected: enabling AddressSanitizer for Opus C code");
+        config
+            .cflag("-fsanitize=address")
+            .cflag("-fno-omit-frame-pointer")
+            .cflag("-g");
+    }
+
     // CPU feature detection for x86_64
     if target_arch == "x86_64" {
         configure_x86_features(&mut config);
