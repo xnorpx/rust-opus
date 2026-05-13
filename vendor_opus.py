@@ -351,6 +351,12 @@ def generate_bindings(opus_dir, output_dir):
             "bindgen",
             str(wrapper_header),
             "--output", str(output_file),
+            # Avoid pulling target-specific libc implementation details into
+            # the committed cross-platform bindings.
+            "--allowlist-function", "opus_.*",
+            "--allowlist-type", "opus_.*",
+            "--allowlist-type", "Opus.*",
+            "--allowlist-var", "OPUS_.*",
             # Add module-level attribute to suppress broken doc link warnings
             # (Doxygen @param [in]/[out] syntax is misinterpreted as Rust doc links)
             "--raw-line", "#![allow(rustdoc::broken_intra_doc_links)]",
@@ -507,7 +513,7 @@ To build and test:
   cargo test
 
 To regenerate bindings manually:
-  bindgen vendored/opus/include/opus_all.h -o src/bindings.rs -- -I vendored/opus/include
+    python vendor_opus.py --bindings-only
 """)
 
 
