@@ -3,8 +3,8 @@
 # This file tracks the exact version of the vendored Opus source.
 
 source: https://github.com/xiph/opus
-commit: c6f8d82fce7584d7a670908fbbb2c76bd9030ce6
-date: 2026-04-22
+commit: f8f99516092f4311a9b0784f190ff982df8eb2e6
+date: 2026-05-01
 branch: main
 
 # To update, run this script again:
