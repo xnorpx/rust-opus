@@ -56,7 +56,7 @@ int dred_encoder_load_model(DREDEnc* enc, const void *data, int len)
 {
     WeightArray *list;
     int ret;
-    parse_weights(&list, data, len);
+    if (parse_weights(&list, data, len) < 0) return OPUS_BAD_ARG;
     ret = init_rdovaeenc(&enc->model, list);
     opus_free(list);
     if (ret == 0) {
@@ -167,9 +167,9 @@ static void dred_convert_to_16k(DREDEnc *enc, const float *in, int in_len, float
     celt_assert(up*in_len <= MAX_DOWNMIX_BUFFER);
     OPUS_CLEAR(downmix, up*in_len);
     if (enc->channels == 1) {
-        for (i=0;i<in_len;i++) downmix[up*i] = FLOAT2INT16(up*in[i])+VERY_SMALL;
+        for (i=0;i<in_len;i++) downmix[up*i] = up*(float)FLOAT2INT16(in[i])+VERY_SMALL;
     } else {
-        for (i=0;i<in_len;i++) downmix[up*i] = FLOAT2INT16(.5*up*(in[2*i]+in[2*i+1]))+VERY_SMALL;
+        for (i=0;i<in_len;i++) downmix[up*i] = up*(float)FLOAT2INT16(.5*(in[2*i]+in[2*i+1]))+VERY_SMALL;
     }
     if (enc->Fs == 16000) {
         OPUS_COPY(out, downmix, out_len);
@@ -237,7 +237,7 @@ void dred_compute_latents(DREDEnc *enc, const float *pcm, int frame_size, int ex
             }
         }
 
-        pcm += process_size;
+        pcm += process_size*enc->channels;
         frame_size16k -= process_size16k;
     }
 }
@@ -271,6 +271,7 @@ static void dred_encode_latents(ec_enc *enc, const float *x, const opus_uint8 *s
 static int dred_voice_active(const unsigned char *activity_mem, int offset) {
     int i;
     for (i=0;i<16;i++) {
+        if (8*offset + i >= DRED_MAX_FRAMES*4) break;
         if (activity_mem[8*offset + i] == 1) return 1;
     }
     return 0;
@@ -300,7 +301,7 @@ int dred_encode_silk_frame(DREDEnc *enc, unsigned char *buf, int max_chunks, int
         delayed_dred = 1;
         enc->last_extra_dred_offset = 0;
     }
-    while (latent_offset < enc->latents_buffer_fill && !dred_voice_active(activity_mem, latent_offset)) {
+    while (latent_offset < enc->latents_buffer_fill - 1 && !dred_voice_active(activity_mem, latent_offset)) {
        latent_offset++;
        extra_dred_offset++;
     }
@@ -343,7 +344,7 @@ int dred_encode_silk_frame(DREDEnc *enc, unsigned char *buf, int max_chunks, int
       return 0;
     }
     ec_bak = ec_encoder;
-    for (i = 0; i < IMIN(2*max_chunks, enc->latents_buffer_fill-latent_offset-1); i += 2)
+    for (i = 0; i < IMIN(2*max_chunks, enc->latents_buffer_fill-latent_offset); i += 2)
     {
         int active;
         q_level = compute_quantizer(q0, dQ, qmax, i/2);
