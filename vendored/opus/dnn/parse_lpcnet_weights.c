@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include "nnet.h"
 #include "os_support.h"
+#include "vec.h"
 
 #define SPARSE_BLOCK_SIZE 32
 
@@ -64,8 +65,15 @@ int parse_weights(WeightArray **list, const void *data, int len)
     if (ret > 0) {
       if (nb_arrays+1 >= capacity) {
         /* Make sure there's room for the ending NULL element too. */
+        WeightArray *new_list;
         capacity = capacity*3/2;
-        *list = (WeightArray*)opus_realloc(*list, capacity*sizeof(WeightArray));
+        new_list = (WeightArray*)opus_realloc(*list, capacity*sizeof(WeightArray));
+        if (new_list == NULL) {
+           opus_free(*list);
+           *list = NULL;
+           return -1;
+        }
+        *list = new_list;
       }
       (*list)[nb_arrays++] = array;
     } else {
@@ -111,7 +119,7 @@ static const void *find_idx_check(const WeightArray *arrays, const char *name, i
     if (remain < nb_blocks+1) return NULL;
     for (i=0;i<nb_blocks;i++) {
       int pos = *idx++;
-      if (pos+3 >= nb_in || (pos&0x3)) return NULL;
+      if (pos < 0 || pos+3 >= nb_in || (pos&0x3)) return NULL;
     }
     nb_out -= 8;
     remain -= nb_blocks+1;
@@ -140,6 +148,7 @@ int linear_init(LinearLayer *layer, const WeightArray *arrays,
   layer->weights_idx = NULL;
   layer->diag = NULL;
   layer->scale = NULL;
+  if (nb_inputs > MAX_INPUTS) return 1;
   if (bias != NULL) {
     if ((layer->bias = (const float*)find_array_check(arrays, bias, nb_outputs*sizeof(layer->bias[0]))) == NULL) return 1;
   }
