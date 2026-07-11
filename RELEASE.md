@@ -115,6 +115,10 @@ The model hash comes from `vendored/opus/autogen.sh`. If Opus updates their mode
 
 ## Release History
 
+### v0.3.1
+- Update vendored Opus snapshot to `3da9f7a6db1c`
+- Refresh the CMake Unity build patch for upstream DRED changes
+
 ### v0.2.0
 - Update vendored Opus snapshot and patch set
 - Enable CMake Unity builds for the vendored Opus build
